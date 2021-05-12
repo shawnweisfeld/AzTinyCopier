@@ -77,7 +77,7 @@ for i in {1..10}; do
           OperationConnection=$OpsAcctCS \
           QueueName="myqueue" \
           WhatIf="false" \
-          VisibilityTimeout="20" \
+          VisibilityTimeout="60" \
           SleepWait="1" \
           ThreadCount="0" \
           Delimiter="/"
@@ -93,19 +93,23 @@ done
 ```
 
 dependencies 
-| where target == 'ProcessPath'
-| extend Container=customDimensions['Container'],
+| where target == 'ProcessPath' and timestamp > datetime(2021-05-12 12:00:00)
+| project timestamp,
+    Container=customDimensions['Container'],
+    Prefix=customDimensions['Prefix'],
     Delimiter=customDimensions['Delimiter'],
     DestinationConnection=customDimensions['DestinationConnection'],
     Run=customDimensions['Run'],
     SourceConnection=customDimensions['SourceConnection'],
     ThreadCount=customDimensions['ThreadCount'],
     WhatIf=customDimensions['WhatIf'],
-    blobBytes=customDimensions['blobBytes'],
-    blobBytesMoved=customDimensions['blobBytesMoved'],
-    blobCount=customDimensions['blobCount'],
-    blobCountMoved=customDimensions['blobCountMoved'],
-    subPrefixes=customDimensions['subPrefixes']
+    blobBytes=tolong(customDimensions['blobBytes']),
+    blobBytesMoved=tolong(customDimensions['blobBytesMoved']),
+    blobCount=tolong(customDimensions['blobCount']),
+    blobCountMoved=tolong(customDimensions['blobCountMoved']),
+    subPrefixes=tolong(customDimensions['subPrefixes']),
+    durationMin=round(duration/60000, 2),
+    blobsPerMin=round(tolong(customDimensions['blobCountMoved'])/(duration/60000), 2)
 | order by timestamp desc
 
 ```
