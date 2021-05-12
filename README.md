@@ -60,7 +60,7 @@ OpsAcctCS="$(az storage account show-connection-string --name $OpsAcct -g $OpsRG
 for i in {1..10}; do
   az container create \
       --name $ACI$i \
-      --resource-group $OpsRg \
+      --resource-group $OpsRG \
       --location $OpsRegion \
       --cpu 1 \
       --memory 1 \
@@ -82,4 +82,30 @@ for i in {1..10}; do
           ThreadCount="0" \
           Delimiter="/"
 done
+```
+
+```
+{ "Action": "ProcessAccount" }
+
+```
+
+
+```
+
+dependencies 
+| where target == 'ProcessPath'
+| extend Container=customDimensions['Container'],
+    Delimiter=customDimensions['Delimiter'],
+    DestinationConnection=customDimensions['DestinationConnection'],
+    Run=customDimensions['Run'],
+    SourceConnection=customDimensions['SourceConnection'],
+    ThreadCount=customDimensions['ThreadCount'],
+    WhatIf=customDimensions['WhatIf'],
+    blobBytes=customDimensions['blobBytes'],
+    blobBytesMoved=customDimensions['blobBytesMoved'],
+    blobCount=customDimensions['blobCount'],
+    blobCountMoved=customDimensions['blobCountMoved'],
+    subPrefixes=customDimensions['subPrefixes']
+| order by timestamp desc
+
 ```

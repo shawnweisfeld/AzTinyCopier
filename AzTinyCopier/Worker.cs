@@ -223,29 +223,36 @@ namespace AzTinyCopier
                     await toUpload.DeleteIfExistsAsync(cancellationToken: cancellationToken);
                     await toUpload.UploadAsync("status.csv", cancellationToken: cancellationToken);
 
+                    var blobSet = new ConcurrentBag<Task>();
+
                     foreach (var blob in blobs)
                     {
-                        await slim.WaitAsync(cancellationToken);
-
-                        if (blob.Value.DestinationBytes == -1)
+                        blobSet.Add(Task.Run(async () =>
                         {
-                            if (!_config.WhatIf)
+                            await slim.WaitAsync(cancellationToken);
+
+                            if (blob.Value.DestinationBytes == -1)
                             {
-                                var dest = destinationBlobContainerClient.GetBlobClient(blob.Key);
-                                var source = sourceBlobContainerClient.GetBlobClient(blob.Key);
-                                
-                                await dest.SyncCopyFromUriAsync(new Uri($"{source.Uri.AbsoluteUri}{sasUri.Query}"));
+                                if (!_config.WhatIf)
+                                {
+                                    var dest = destinationBlobContainerClient.GetBlobClient(blob.Key);
+                                    var source = sourceBlobContainerClient.GetBlobClient(blob.Key);
+
+                                    await dest.SyncCopyFromUriAsync(new Uri($"{source.Uri.AbsoluteUri}{sasUri.Query}"));
+                                }
+
+                                Interlocked.Add(ref blobCountMoved, 1);
+                                Interlocked.Add(ref blobBytesMoved, blob.Value.SourceBytes);
                             }
 
-                            Interlocked.Add(ref blobCountMoved, 1);
-                            Interlocked.Add(ref blobBytesMoved, blob.Value.SourceBytes);
-                        }
+                            Interlocked.Add(ref blobCount, 1);
+                            Interlocked.Add(ref blobBytes, blob.Value.SourceBytes);
 
-                        Interlocked.Add(ref blobCount, 1);
-                        Interlocked.Add(ref blobBytes, blob.Value.SourceBytes);
-
-                        slim.Release();
+                            slim.Release();
+                        }));
                     }
+
+                    await Task.WhenAll(blobSet.ToArray());
 
 
                     op.Telemetry.Properties.Add("Run", _config.Run);
