@@ -84,9 +84,14 @@ for i in {1..10}; do
 done
 ```
 
+Queue message to process the entire storage account from the root.
 ```
 { "Action": "ProcessAccount" }
+```
 
+Queue message to start processing the storage account at an arbitrary path (including all subfolders). NOTE: make sure to include the trailing delimiter (i.e. the `/`)
+```
+{"Action":"ProcessPath","Container":"mycontainer","Path":"myfolder/myfolder/"}
 ```
 
 

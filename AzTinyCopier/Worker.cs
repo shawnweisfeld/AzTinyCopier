@@ -48,6 +48,7 @@ namespace AzTinyCopier
                 {
                     if (!await ProcessQueueMessage(stoppingToken))
                     {
+                        _logger.LogInformation("Sleeping");
                         await Task.Delay(TimeSpan.FromMinutes(_config.SleepWait));
                     }
                 }
@@ -149,11 +150,11 @@ namespace AzTinyCopier
                     };
                     sasBuilder.SetPermissions(BlobAccountSasPermissions.Read);
                     Uri sasUri = sourceBlobContainerClient.GenerateSasUri(sasBuilder);
-                    var sourceBlobs = new ConcurrentDictionary<string, long>();
+                    var sourceBlobs = new ConcurrentDictionary<string, BlobInfo>();
 
                     var destinationBlobServiceClient = new BlobServiceClient(_config.DestinationConnection);
                     var destinationBlobContainerClient = destinationBlobServiceClient.GetBlobContainerClient(msg.Container);
-                    var destinationBlobs = new ConcurrentDictionary<string, long>();
+                    var destinationBlobs = new ConcurrentDictionary<string, BlobInfo>();
                     await destinationBlobContainerClient.CreateIfNotExistsAsync();
 
                     var operationBlobServiceClient = new BlobServiceClient(_config.OperationConnection);
@@ -166,6 +167,8 @@ namespace AzTinyCopier
                     long blobCountMoved = 0;
                     long blobBytesMoved = 0;
                     long subPrefixes = 0;
+                    string fileName = "status.csv";
+                    var blobs = new Dictionary<string, SourceDestinationInfo>();
 
                     if (string.IsNullOrEmpty(_config.Delimiter))
                     {
@@ -194,7 +197,7 @@ namespace AzTinyCopier
                             }
                             else if (item.IsBlob)
                             {
-                                sourceBlobs.TryAdd(item.Blob.Name, item.Blob.Properties.ContentLength.GetValueOrDefault());
+                                sourceBlobs.TryAdd(item.Blob.Name, new BlobInfo(item.Blob.Properties));
                             }
                         }
                     });
@@ -205,23 +208,38 @@ namespace AzTinyCopier
                         {
                             if (item.IsBlob)
                             {
-                                destinationBlobs.TryAdd(item.Blob.Name, item.Blob.Properties.ContentLength.GetValueOrDefault());
+                                destinationBlobs.TryAdd(item.Blob.Name, new BlobInfo(item.Blob.Properties));
                             }
                         }
                     });
 
                     await Task.WhenAll(getSourceTask, getDestinationTask);
 
-                    var blobs = sourceBlobs.ToDictionary(x => x.Key, x => new
-                    {
-                        SourceBytes = x.Value,
-                        DestinationBytes = destinationBlobs.ContainsKey(x.Key) ? destinationBlobs[x.Key] : -1
-                    });
 
-                    await File.WriteAllLinesAsync("status.csv", blobs.Select(x => $"{x.Key}, {x.Value.SourceBytes}, {x.Value.DestinationBytes}"));
-                    var toUpload = operationBlobContainerClient.GetBlobClient($"{msg.Path}status.csv");
+                    if (File.Exists(fileName))
+                        File.Delete(fileName);
+                        
+                    using (StreamWriter sw = new StreamWriter(fileName))
+                    {
+                        await sw.WriteLineAsync($"File,Source Size,Source MD5,Source Last Modified,Destination Size,Destination MD5,Destination Last Modified");
+                        foreach (var item in sourceBlobs)
+                        {
+                            if (destinationBlobs.ContainsKey(item.Key))
+                            {
+                                var destinationBlob = destinationBlobs[item.Key];
+                                await sw.WriteLineAsync($"{item.Key},{item.Value.Size},{item.Value.ContentMD5},{item.Value.LastModified},{destinationBlob.Size},{destinationBlob.ContentMD5},{destinationBlob.LastModified}");
+                                blobs.Add(item.Key, new SourceDestinationInfo(item.Value, destinationBlob));
+                            }
+                            else
+                            {
+                                await sw.WriteLineAsync($"{item.Key},{item.Value.Size},{item.Value.ContentMD5},{item.Value.LastModified},,,");
+                                blobs.Add(item.Key, new SourceDestinationInfo(item.Value));
+                            }
+                        }
+                    }
+                    var toUpload = operationBlobContainerClient.GetBlobClient($"{msg.Path}{fileName}");
                     await toUpload.DeleteIfExistsAsync(cancellationToken: cancellationToken);
-                    await toUpload.UploadAsync("status.csv", cancellationToken: cancellationToken);
+                    await toUpload.UploadAsync(fileName, cancellationToken: cancellationToken);
 
                     var blobSet = new ConcurrentBag<Task>();
 
@@ -231,7 +249,8 @@ namespace AzTinyCopier
                         {
                             await slim.WaitAsync(cancellationToken);
 
-                            if (blob.Value.DestinationBytes == -1)
+                            if (blob.Value.Destination == null 
+                                || blob.Value.Source.LastModified > blob.Value.Destination.LastModified)
                             {
                                 if (!_config.WhatIf)
                                 {
@@ -242,11 +261,11 @@ namespace AzTinyCopier
                                 }
 
                                 Interlocked.Add(ref blobCountMoved, 1);
-                                Interlocked.Add(ref blobBytesMoved, blob.Value.SourceBytes);
+                                Interlocked.Add(ref blobBytesMoved, blob.Value.Source.Size);
                             }
 
                             Interlocked.Add(ref blobCount, 1);
-                            Interlocked.Add(ref blobBytes, blob.Value.SourceBytes);
+                            Interlocked.Add(ref blobBytes, blob.Value.Source.Size);
 
                             slim.Release();
                         }));
