@@ -145,7 +145,7 @@ namespace AzTinyCopier
                     {
                         BlobContainerName = msg.Container,
                         Resource = "c",
-                        ExpiresOn = DateTimeOffset.UtcNow.AddHours(_config.SleepWait)
+                        ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(_config.VisibilityTimeout)
                     };
                     sasBuilder.SetPermissions(BlobAccountSasPermissions.Read);
                     Uri sasUri = sourceBlobContainerClient.GenerateSasUri(sasBuilder);
