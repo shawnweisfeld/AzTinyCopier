@@ -14,7 +14,16 @@ namespace AzTinyCopier
         public string Path { get; set; }
 
         public static Message FromString(string msg)
-        { 
+        {
+            msg = msg.Trim();
+
+            //if it doesnt start with a { assume it is base64 encoded. 
+            if (!msg.StartsWith("{"))
+            {
+                var bytes = Convert.FromBase64String(msg);
+                msg = Encoding.UTF8.GetString(bytes);
+            }
+
             return JsonConvert.DeserializeObject<Message>(msg);
         }
 
